@@ -3,7 +3,7 @@
 
 <head>
 
-    <title>Pac-Man</title>
+    <title>Pac-Man - Mod por Seu Nome</title>
     <!-- last updated: Sun May 14 21:10:27 PDT 2023 -->
     <!-- Lock viewport on mobile devices. -->
     <!--
@@ -45,11 +45,38 @@
 
 <body>
 
-</div>
-
     <div style='font-family: ArcadeR'> </div>
     <canvas id='canvas'><div id="canvas-warning">Your browser does not support HTML Canvas.  Please upgrade!</div></canvas>
     <canvas id='atlas' style="display:none"></canvas>
+
+    <!-- Rodapé personalizado com o seu nome -->
+    <div style="
+      position: fixed;
+      bottom: 5px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-family: sans-serif;
+      font-size: 12px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 4px 12px;
+      border-radius: 12px;
+      z-index: 9999;
+      pointer-events: none;
+    ">
+      🎮 Pac-Man • Modificado por <strong>Seu Nome</strong>
+    </div>
+
+    <!-- Script para pausar o som automaticamente ao sair da WebView do WhatsApp -->
+    <script>
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          document.querySelectorAll("audio, video").forEach(media => {
+            media.pause();
+          });
+        }
+      });
+    </script>
 
 </body>
 
