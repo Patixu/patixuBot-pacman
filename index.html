@@ -4,12 +4,7 @@
 <head>
 
     <title>Pac-Man - Mod por Seu Nome</title>
-    <!-- last updated: Sun May 14 21:10:27 PDT 2023 -->
-    <!-- Lock viewport on mobile devices. -->
-    <!--
-    <meta name="viewport" content="width=device-width; initial-scale=1.0; maximum-scale=1.0; user-scalable=0;" />
 
-    -->
     <!-- Allow page to be saved as web app on iOS. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
 
@@ -29,15 +24,124 @@
         @font-face {
             font-family: 'ArcadeR';
             src: url('font/ARCADE_R.TTF');
-            /*
-            src: url('font/PressStart2P.ttf');
-            */
         }
         #canvas-warning {
             color: #FF0;
             font-size: 1.5em;
         }
+        #sound-toggle {
+            position: fixed;
+            top: 8px;
+            right: 8px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            font-size: 20px;
+            line-height: 1;
+            z-index: 10000;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
     </style>
+
+    <!--
+      CONTROLE DE SOM — precisa vir ANTES do pacman.js.
+      O jogo toca som com new Audio('sounds/...') (objetos que não ficam na página),
+      então interceptamos o play() para conseguir pausar/silenciar tudo depois.
+    -->
+    <script>
+    (function () {
+        var medias = [];          // todo áudio que o jogo já tocou
+        var pausedByHide = [];    // os que estavam tocando quando a página saiu de cena
+        var userMuted = false;    // botão 🔊/🔇
+        var hidden = false;       // página escondida / sem foco / fechada
+        var stalled = false;      // a tela parou de renderizar (WebView fechada em segundo plano)
+        var suspended = false;
+
+        var nativePlay = HTMLMediaElement.prototype.play;
+
+        HTMLMediaElement.prototype.play = function () {
+            if (medias.indexOf(this) === -1) medias.push(this);
+            this.muted = userMuted;
+            if (suspended) return Promise.resolve();
+            return nativePlay.apply(this, arguments);
+        };
+
+        function playSafely(media) {
+            var result = nativePlay.call(media);
+            if (result && result.catch) result.catch(function () {});
+        }
+
+        function suspend() {
+            if (suspended) return;
+            suspended = true;
+            pausedByHide = medias.filter(function (m) { return !m.paused; });
+            pausedByHide.forEach(function (m) { m.pause(); });
+        }
+
+        function resume() {
+            if (!suspended) return;
+            suspended = false;
+            pausedByHide.forEach(playSafely);
+            pausedByHide = [];
+        }
+
+        function apply() {
+            if (hidden || stalled) suspend(); else resume();
+        }
+
+        function applyMute() {
+            medias.forEach(function (m) { m.muted = userMuted; });
+        }
+
+        // 1) Sai de cena: troca de app, tela bloqueada, WebView fechada, perda de foco
+        //    (o próprio jogo congela no blur, então o som acompanha).
+        document.addEventListener('visibilitychange', function () { hidden = document.hidden; apply(); });
+        window.addEventListener('pagehide', function () { hidden = true; apply(); });
+        window.addEventListener('pageshow', function () { hidden = document.hidden; apply(); });
+        window.addEventListener('blur', function () { hidden = true; apply(); });
+        window.addEventListener('focus', function () { hidden = document.hidden; apply(); });
+        document.addEventListener('freeze', function () { hidden = true; apply(); });
+        document.addEventListener('resume', function () { hidden = document.hidden; apply(); });
+
+        // 2) Vigia: se a tela parar de renderizar por mais de 1,5 s (WebView escondida
+        //    sem disparar evento nenhum), silencia. Quando voltar a renderizar, retoma.
+        var lastBeat = performance.now();
+        (function beat() {
+            lastBeat = performance.now();
+            requestAnimationFrame(beat);
+        })();
+        setInterval(function () {
+            var isStalled = performance.now() - lastBeat > 1500;
+            if (isStalled !== stalled) {
+                stalled = isStalled;
+                apply();
+            }
+        }, 500);
+
+        // 3) Botão 🔊/🔇 (usa a propriedade "muted", então não quebra os loops do jogo).
+        document.addEventListener('DOMContentLoaded', function () {
+            var button = document.createElement('button');
+            button.id = 'sound-toggle';
+            button.textContent = '🔊';
+            button.setAttribute('aria-label', 'Ligar ou desligar o som');
+
+            button.addEventListener('pointerdown', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                userMuted = !userMuted;
+                button.textContent = userMuted ? '🔇' : '🔊';
+                applyMute();
+            });
+
+            document.body.appendChild(button);
+        });
+    })();
+    </script>
 
 <script src="pacman.js"></script>
 
@@ -66,17 +170,6 @@
     ">
       🎮 Pac-Man • Modificado por <strong>Seu Nome</strong>
     </div>
-
-    <!-- Script para pausar o som automaticamente ao sair da WebView do WhatsApp -->
-    <script>
-      document.addEventListener("visibilitychange", () => {
-        if (document.hidden) {
-          document.querySelectorAll("audio, video").forEach(media => {
-            media.pause();
-          });
-        }
-      });
-    </script>
 
 </body>
 
