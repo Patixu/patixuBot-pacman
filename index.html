@@ -49,9 +49,12 @@
     </style>
 
     <!--
-      CONTROLE DE SOM — precisa vir ANTES do pacman.js.
-      O jogo toca som com new Audio('sounds/...') (objetos que não ficam na página),
-      então interceptamos o play() para conseguir pausar/silenciar tudo depois.
+      CONTROLE DE SOM E RETOMADA — precisa vir ANTES do pacman.js.
+
+      1) Som: o jogo toca com new Audio('sounds/...') (objetos que não ficam na página),
+         então interceptamos o play() para conseguir pausar/silenciar tudo depois.
+      2) Retomada: o jogo para ao perder o foco (blur) e só volta com o evento focus,
+         que a WebView do WhatsApp nem sempre manda. Aqui disparamos o focus ao voltar.
     -->
     <script>
     (function () {
@@ -59,8 +62,9 @@
         var pausedByHide = [];    // os que estavam tocando quando a página saiu de cena
         var userMuted = false;    // botão 🔊/🔇
         var hidden = false;       // página escondida / sem foco / fechada
-        var stalled = false;      // a tela parou de renderizar (WebView fechada em segundo plano)
+        var stalled = false;      // a tela parou de renderizar (WebView em segundo plano)
         var suspended = false;
+        var needsWake = false;    // o jogo pode ter parado e precisa ser reiniciado
 
         var nativePlay = HTMLMediaElement.prototype.play;
 
@@ -98,18 +102,43 @@
             medias.forEach(function (m) { m.muted = userMuted; });
         }
 
-        // 1) Sai de cena: troca de app, tela bloqueada, WebView fechada, perda de foco
-        //    (o próprio jogo congela no blur, então o som acompanha).
-        document.addEventListener('visibilitychange', function () { hidden = document.hidden; apply(); });
-        window.addEventListener('pagehide', function () { hidden = true; apply(); });
-        window.addEventListener('pageshow', function () { hidden = document.hidden; apply(); });
-        window.addEventListener('blur', function () { hidden = true; apply(); });
-        window.addEventListener('focus', function () { hidden = document.hidden; apply(); });
-        document.addEventListener('freeze', function () { hidden = true; apply(); });
-        document.addEventListener('resume', function () { hidden = document.hidden; apply(); });
+        // Faz o jogo reiniciar o loop: o executive do pacman.js escuta "focus" e chama start()
+        // (que é ignorado se o jogo já está rodando, então chamar a mais não faz mal).
+        function wake() {
+            window.dispatchEvent(new Event('focus'));
+        }
+
+        // 1) Sai de cena: troca de app, tela bloqueada, WebView fechada, perda de foco.
+        function onHide() {
+            hidden = true;
+            needsWake = true;
+            apply();
+        }
+
+        function onShow() {
+            hidden = document.hidden;
+            apply();
+            if (!hidden) wake();
+        }
+
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) onHide(); else onShow();
+        });
+        window.addEventListener('pagehide', onHide);
+        window.addEventListener('pageshow', onShow);
+        window.addEventListener('blur', onHide);
+        document.addEventListener('freeze', onHide);
+        document.addEventListener('resume', onShow);
+
+        // Evento "focus" real (ou o que disparamos): só atualiza o estado, sem recursão.
+        window.addEventListener('focus', function () {
+            hidden = document.hidden;
+            apply();
+        });
 
         // 2) Vigia: se a tela parar de renderizar por mais de 1,5 s (WebView escondida
-        //    sem disparar evento nenhum), silencia. Quando voltar a renderizar, retoma.
+        //    sem disparar evento nenhum), silencia. Quando voltar a renderizar, retoma
+        //    o som e reinicia o jogo.
         var lastBeat = performance.now();
         (function beat() {
             lastBeat = performance.now();
@@ -119,11 +148,29 @@
             var isStalled = performance.now() - lastBeat > 1500;
             if (isStalled !== stalled) {
                 stalled = isStalled;
+                if (stalled) {
+                    needsWake = true;
+                } else {
+                    hidden = document.hidden;
+                    wake();
+                }
                 apply();
             }
         }, 500);
 
-        // 3) Botão 🔊/🔇 (usa a propriedade "muted", então não quebra os loops do jogo).
+        // 3) Último recurso: o primeiro toque depois de voltar reinicia o jogo.
+        ['pointerdown', 'touchstart'].forEach(function (name) {
+            document.addEventListener(name, function () {
+                if (needsWake && !document.hidden) {
+                    needsWake = false;
+                    hidden = false;
+                    apply();
+                    wake();
+                }
+            }, { capture: true, passive: true });
+        });
+
+        // 4) Botão 🔊/🔇 (usa a propriedade "muted", então não quebra os loops do jogo).
         document.addEventListener('DOMContentLoaded', function () {
             var button = document.createElement('button');
             button.id = 'sound-toggle';
